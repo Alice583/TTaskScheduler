@@ -13,11 +13,12 @@ private:
     };
 
     template<class Function, class Type>
-    class Arguments0: public TaskWrapper {
+    class Arguments0 : public TaskWrapper {
     public:
         Arguments0(Function function) {
             function_ = function;
         }
+
         void doFunction() override {
             if (res_ready_) {
                 return;
@@ -30,9 +31,11 @@ private:
                 std::cerr << "Error: " << e.what() << std::endl;
             }
         }
+
         void* GetValue() override {
             return static_cast<void*>(&result_);
         }
+
     private:
         Function function_;
         Type result_ = NULL;
@@ -40,7 +43,7 @@ private:
     };
 
     template<typename Function, typename Type>
-    class Arguments1: public TaskWrapper {
+    class Arguments1 : public TaskWrapper {
     public:
         Arguments1(Function f, Type val_a, TaskWrapper* relation) {
             function_ = f;
@@ -56,8 +59,7 @@ private:
                 if (relation_id_ == nullptr) {
                     result_ = function_(a_);
                     res_ready_ = true;
-                }
-                else {
+                } else {
                     relation_id_->doFunction();
                     a_ = *static_cast<Type*>(relation_id_->GetValue());
                     result_ = function_(a_);
@@ -73,6 +75,7 @@ private:
         void* GetValue() override {
             return static_cast<void*>(&result_);
         }
+
     private:
         Function function_;
         Type a_ = NULL;
@@ -82,7 +85,7 @@ private:
     };
 
     template<typename Function, typename Type>
-    class Arguments2: public TaskWrapper {
+    class Arguments2 : public TaskWrapper {
     public:
         Arguments2(Function& f, Type& val_a, Type& val_b, TaskWrapper* relation) {
             function_ = f;
@@ -99,8 +102,7 @@ private:
                 if (relation_id_ == nullptr) {
                     result_ = function_(a_, b_);
                     res_ready_ = true;
-                }
-                else {
+                } else {
                     relation_id_->doFunction();
                     b_ = *static_cast<Type*>(relation_id_->GetValue());
                     result_ = function_(a_, b_);
@@ -116,6 +118,7 @@ private:
         void* GetValue() override {
             return static_cast<void*>(&result_);
         }
+
     private:
         Function function_;
         Type a_ = NULL;
@@ -198,6 +201,14 @@ public:
         relations_.resize(count + 1);
         relations_[count] = id;
         return *static_cast<Type*>(id->GetValue());
+    }
+    ~TTaskScheduler() {
+        for (int i = 0; i < tasks_.size(); ++i) {
+            delete tasks_[i];
+        }
+        for (int i = 0; i < relations_.size(); ++i) {
+            delete relations_[i];
+        }
     }
 
 };
