@@ -19,7 +19,6 @@ private:
     class Arguments0 : public TaskWrapper {
     public:
         Arguments0(Function function) : function_(function), res_ready_(false), result_() {}
-
         void doFunction() override {
             if (res_ready_) {
                 return;
