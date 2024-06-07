@@ -1,6 +1,9 @@
+
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <memory>
+
 inline int count;
 
 class TTaskScheduler {
@@ -8,16 +11,14 @@ private:
     class TaskWrapper {
     public:
         virtual void doFunction() = 0;
-
-        virtual void* GetValue() = 0;
+        virtual void* getValue() = 0;
+        virtual ~TaskWrapper() = default;
     };
 
     template<class Function, class Type>
     class Arguments0 : public TaskWrapper {
     public:
-        Arguments0(Function function) {
-            function_ = function;
-        }
+        Arguments0(Function function) : function_(function), res_ready_(false), result_() {}
 
         void doFunction() override {
             if (res_ready_) {
@@ -32,36 +33,33 @@ private:
             }
         }
 
-        void* GetValue() override {
+        void* getValue() override {
             return static_cast<void*>(&result_);
         }
 
     private:
         Function function_;
-        Type result_ = NULL;
-        bool res_ready_ = false;
+        Type result_;
+        bool res_ready_;
     };
 
     template<typename Function, typename Type>
     class Arguments1 : public TaskWrapper {
     public:
-        Arguments1(Function f, Type val_a, TaskWrapper* relation) {
-            function_ = f;
-            a_ = val_a;
-            relation_id_ = relation;
-        }
+        Arguments1(Function f, Type val_a, std::shared_ptr<TaskWrapper> relation)
+                : function_(f), a_(val_a), relation_id_(relation), res_ready_(false), result_() {}
 
         void doFunction() override {
             if (res_ready_) {
                 return;
             }
             try {
-                if (relation_id_ == nullptr) {
+                if (!relation_id_) {
                     result_ = function_(a_);
                     res_ready_ = true;
                 } else {
                     relation_id_->doFunction();
-                    a_ = *static_cast<Type*>(relation_id_->GetValue());
+                    a_ = *static_cast<Type*>(relation_id_->getValue());
                     result_ = function_(a_);
                     relation_id_ = nullptr;
                     res_ready_ = true;
@@ -72,39 +70,35 @@ private:
             }
         }
 
-        void* GetValue() override {
+        void* getValue() override {
             return static_cast<void*>(&result_);
         }
 
     private:
         Function function_;
-        Type a_ = NULL;
-        Type result_ = NULL;
-        TaskWrapper* relation_id_ = nullptr;
-        bool res_ready_ = false;
+        Type a_;
+        Type result_;
+        std::shared_ptr<TaskWrapper> relation_id_;
+        bool res_ready_;
     };
 
     template<typename Function, typename Type>
     class Arguments2 : public TaskWrapper {
     public:
-        Arguments2(Function& f, Type& val_a, Type& val_b, TaskWrapper* relation) {
-            function_ = f;
-            a_ = val_a;
-            b_ = val_b;
-            relation_id_ = relation;
-        }
+        Arguments2(Function f, Type val_a, Type val_b, std::shared_ptr<TaskWrapper> relation)
+                : function_(f), a_(val_a), b_(val_b), relation_id_(relation), res_ready_(false), result_() {}
 
         void doFunction() override {
             if (res_ready_) {
                 return;
             }
             try {
-                if (relation_id_ == nullptr) {
+                if (!relation_id_) {
                     result_ = function_(a_, b_);
                     res_ready_ = true;
                 } else {
                     relation_id_->doFunction();
-                    b_ = *static_cast<Type*>(relation_id_->GetValue());
+                    b_ = *static_cast<Type*>(relation_id_->getValue());
                     result_ = function_(a_, b_);
                     relation_id_ = nullptr;
                     res_ready_ = true;
@@ -115,65 +109,51 @@ private:
             }
         }
 
-        void* GetValue() override {
+        void* getValue() override {
             return static_cast<void*>(&result_);
         }
 
     private:
         Function function_;
-        Type a_ = NULL;
-        Type b_ = NULL;
-        Type result_ = NULL;
-        TaskWrapper* relation_id_ = nullptr;
-        bool res_ready_ = false;
+        Type a_;
+        Type b_;
+        Type result_;
+        std::shared_ptr<TaskWrapper> relation_id_;
+        bool res_ready_;
     };
 
-    std::vector<TaskWrapper*> tasks_;
-    std::vector<TaskWrapper*> relations_;
+    std::vector<std::shared_ptr<TaskWrapper>> tasks_;
+    std::vector<std::shared_ptr<TaskWrapper>> relations_;
 
 public:
     template<typename Function>
     auto add(Function func) {
         using Type = decltype(func());
+        auto task = std::make_shared<Arguments0<Function, Type>>(func);
         if (count > 0 && relations_[count] != nullptr) {
-            auto* task = new Arguments0<Function, Type>(func);
             tasks_.push_back(task);
             count++;
-            return tasks_[tasks_.size() - 1];
+            return tasks_.back();
         }
-        auto* task = new Arguments0<Function, Type>(func);
         tasks_.push_back(task);
         count++;
-        return tasks_[tasks_.size() - 1];
+        return tasks_.back();
     }
 
     template<typename Function, typename Type>
     auto add(Function func, Type a) {
-        if (count > 0 && relations_[count] != nullptr) {
-            auto* task = new Arguments1<Function, Type>(func, a, relations_[count]);
-            tasks_.push_back(task);
-            count++;
-            return tasks_[tasks_.size() - 1];
-        }
-        auto* task = new Arguments1<Function, Type>(func, a, nullptr);
-
+        auto task = std::make_shared<Arguments1<Function, Type>>(func, a, relations_.empty() ? nullptr : relations_[count]);
         tasks_.push_back(task);
         count++;
-        return tasks_[tasks_.size() - 1];
+        return tasks_.back();
     }
 
     template<typename Function, typename Type>
     auto add(Function func, Type a, Type b) {
-        if (count > 0 && relations_[count] != nullptr) {
-            auto* task = new Arguments2<Function, Type>(func, a, b, relations_[count]);
-            tasks_.push_back(task);
-            count++;
-            return tasks_[tasks_.size() - 1];
-        }
-        auto* task = new Arguments2<Function, Type>(func, a, b, nullptr);
+        auto task = std::make_shared<Arguments2<Function, Type>>(func, a, b, relations_.empty() ? nullptr : relations_[count]);
         tasks_.push_back(task);
         count++;
-        return tasks_[tasks_.size() - 1];
+        return tasks_.back();
     }
 
     void executeAll() {
@@ -191,24 +171,15 @@ public:
     }
 
     template<typename Type>
-    auto getResult(TaskWrapper* id) {
-        void* res = id->GetValue();
+    auto getResult(std::shared_ptr<TaskWrapper> id) {
+        void* res = id->getValue();
         return *static_cast<Type*>(res);
     }
 
     template<typename Type>
-    Type getFutureResult(TaskWrapper* id) {
+    Type getFutureResult(std::shared_ptr<TaskWrapper> id) {
         relations_.resize(count + 1);
         relations_[count] = id;
-        return *static_cast<Type*>(id->GetValue());
+        return *static_cast<Type*>(id->getValue());
     }
-    ~TTaskScheduler() {
-        for (int i = 0; i < tasks_.size(); ++i) {
-            delete tasks_[i];
-        }
-        for (int i = 0; i < relations_.size(); ++i) {
-            delete relations_[i];
-        }
-    }
-
 };
